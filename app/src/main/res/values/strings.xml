@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">RotasMaisEntregas</string>
+    <string name="captura_descricao">Serviço para captura e identificação de endereços de coleta e entrega na tela.</string>
 </resources>
