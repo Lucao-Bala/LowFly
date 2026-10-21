@@ -12,43 +12,43 @@ object EnderecoExtractor {
     // REGEX (sempre casando a LINHA INTEIRA, nunca "contém")
     // ---------------------------------------------------------------
 
-    // "OS 779609877", "0S 779609877", "OS#779609877", "OS779609877"
     private val REGEX_OS = Regex("""^[O0]S\s*[#:]?\s*\d{5,}""", RegexOption.IGNORE_CASE)
 
-    // "1º parada", "2° parada", "1ª parada", "1o parada", "Parada 1"
-    // NÃO casa com "R$ 6,60 (1,70 km - 1 parada)" nem com "parada)"
     private val REGEX_MARCA_PARADA =
         Regex("""^(\d+\s*[ºo°ª]?\s*parada|parada\s*\d+)\s*:?$""", RegexOption.IGNORE_CASE)
 
-    // "Cacau Show - (1,10 km)"  -> loja + distância (NÃO é endereço)
     private val REGEX_LOJA_DISTANCIA =
         Regex("""^.+\s*-\s*\(\s*\d+[.,]\d+\s*km\s*\)$""", RegexOption.IGNORE_CASE)
 
     private val REGEX_SO_KM = Regex("""^\(?\s*\d+[.,]?\d*\s*(km|m|min)\s*\)?$""", RegexOption.IGNORE_CASE)
     private val REGEX_HORA = Regex("""^\d{1,2}:\d{2}$""")
-    private val REGEX_SO_NUMERO = Regex("""^[\d\s%.,)(\-]+$""")           // "94", "94%", "9ll 94)"
+    private val REGEX_SO_NUMERO = Regex("""^[\d\s%.,)(\-]+$""")
     private val REGEX_BOTAO = Regex("""^(aceitar|recusar)\b""", RegexOption.IGNORE_CASE)
     private val REGEX_RETORNO = Regex("""\b(retorno|retornar|voltar)\b""", RegexOption.IGNORE_CASE)
     private val REGEX_LADO_RUA = Regex("""\(\s*lado\s+(ímpar|impar|par)\s*\)""", RegexOption.IGNORE_CASE)
+    private val REGEX_DATA_AGENDADA = Regex("""\b\d{1,2}/\d{1,2}/\d{2,4}\b""")
 
-    // Frases longas: seguro usar "contém"
+    // Frases longas de telas do sistema/menus que NUNCA são endereços
     private val RUIDO_CONTEM = listOf(
+        "anteced.", "antecedencia", "antecedência", "agendada para", "programada",
         "aplicativos ativos", "fechar tudo", "desconectado", "ficar livre",
         "seus horários", "ver horários", "escolher horários", "tela inicial",
         "carregar print", "gerar rota", "nova rota", "paradas da rota",
         "filtro para print", "taxa de aceitação", "detalhes da rota",
         "entrega pendente", "entrega já aceita", "ver no mapa",
-        "carteira de créditos", "nova delivery", "yes delivery", "minha localização"
+        "carteira de créditos", "nova delivery", "yes delivery", "minha localização",
+        "mapa livre", "corridas desconectar", "nenhuma entrega", "agendada para",
+        "desconectar", "disp.", "pend.", "livre", "entregas", "mapa", "desafios",
+        "não afeta a ta", "perfil premium"
     )
 
-    // Palavras curtas: só descarta se a linha for EXATAMENTE isso
-    // (assim "Rua 99", "Av. do Perfil" ou "Rua Suporte" não são descartadas)
     private val RUIDO_EXATO = setOf(
         "entrega", "nuvem", "coleta", "menu", "ajuda", "início", "avisos",
         "configurações", "suporte", "ganhos", "histórico", "perfil", "finanças",
         "financeiro", "saldo", "offline", "ficar online", "cancelar", "conectar",
         "aceitar", "recusar", "99", "99pop", "99motorista", "ifood", "whatsapp",
-        "tiktok", "sos", "modal", "opções", "página inicial"
+        "tiktok", "sos", "modal", "opções", "página inicial", "mapa", "corridas",
+        "entrega moto", "entrega food"
     )
 
     private fun ehLinhaOS(linha: String) = REGEX_OS.containsMatchIn(linha.trim())
@@ -59,7 +59,7 @@ object EnderecoExtractor {
         val t = linha.trim()
         val min = t.lowercase()
         if (min.length < 3) return true
-        if (REGEX_HORA.matches(t) || REGEX_SO_NUMERO.matches(t) || REGEX_SO_KM.matches(t)) return true
+        if (REGEX_HORA.matches(t) || REGEX_SO_NUMERO.matches(t) || REGEX_SO_KM.matches(t) || REGEX_DATA_AGENDADA.containsMatchIn(t)) return true
         if (REGEX_LOJA_DISTANCIA.matches(t)) return true
         if (ehLinhaOS(t) || ehMarcaParada(t)) return true
         if (min.startsWith("r$") || min.contains("r$ ") || min.contains("/km")) return true
@@ -71,6 +71,19 @@ object EnderecoExtractor {
 
     fun ehEnderecoValido(linha: String): Boolean = !ehRuido(linha)
 
+    // Valida se a tela realmente exibe o título/aba de uma oferta ativa do aplicativo
+    fun ehTelaDeOfertaAtiva(linhas: List<String>, app: String): Boolean {
+        val texto = linhas.joinToString(" ").lowercase()
+
+        return when (app.uppercase()) {
+            "99" -> texto.contains("99") || texto.contains("aceitar") || texto.contains("não afeta a ta") || texto.contains("entrega moto") || (texto.contains("min") && (texto.contains("km") || texto.contains("m")))
+            "NOVA_DELIVERY" -> texto.contains("nova delivery") || texto.contains("os ") || texto.contains("1º parada") || texto.contains("1a parada")
+            "YES_DELIVERY" -> texto.contains("delivery yes") || texto.contains("yes delivery") || texto.contains("os ") || texto.contains("1º parada") || texto.contains("1a parada")
+            "IFOOD" -> texto.contains("ifood") || texto.contains("coleta no restaurante") || texto.contains("nova entrega")
+            else -> texto.contains("aceitar") || texto.contains("nova delivery") || texto.contains("delivery yes") || texto.contains("os ")
+        }
+    }
+
     // ---------------------------------------------------------------
     // ENTRADA PRINCIPAL
     // ---------------------------------------------------------------
@@ -80,10 +93,14 @@ object EnderecoExtractor {
 
         val app = if (appSelecionado == "AUTO") detectarApp(brutas) else appSelecionado
 
+        // Se a tela NÃO contiver a indicação de oferta ativa do app, aborta a leitura
+        if (!ehTelaDeOfertaAtiva(brutas, app)) {
+            return ResultadoEndereco(coleta = "", destinos = emptyList(), appIdentificado = app)
+        }
+
         val resultadoBruto = when (app.uppercase()) {
             "IFOOD" -> extrairIfood(mesclarLinhasQuebradas(brutas))
-            "99" -> extrair99(mesclarLinhasQuebradas(brutas))
-            // Taximachine NÃO usa mesclarLinhasQuebradas: a segmentação por âncoras já une os fragmentos
+            "99" -> extrair99(brutas)
             else -> extrairTaximachine(brutas, app)
         }
 
@@ -99,33 +116,14 @@ object EnderecoExtractor {
         )
     }
 
-    // ---------------------------------------------------------------
-    // NOVA DELIVERY / YES DELIVERY (Taximachine)
-    //
-    // Layout (cima -> baixo):
-    //   cabeçalho (preço, "1 parada)", badges)  -> IGNORADO
-    //   OS 779609877                            -> âncora 1
-    //   Cacau Show - (1,10 km)                  -> âncora 2 (loja, descartada)
-    //   <fragmentos do endereço de COLETA>
-    //   1º parada                               -> marcador
-    //   <fragmentos do endereço da ENTREGA 1>
-    //   2º parada ...                           -> marcador
-    //   Aceitar / Recusar                       -> fim
-    //
-    // Ideia: segmentar por âncoras e juntar TODOS os fragmentos de cada
-    // segmento com espaço. Não depende de adivinhar onde a rua quebrou.
-    // ---------------------------------------------------------------
     private fun extrairTaximachine(linhas: List<String>, nomeApp: String): ResultadoEndereco {
-        // 1) Corta tudo a partir dos botões Aceitar/Recusar
         val idxBotao = linhas.indexOfFirst { REGEX_BOTAO.containsMatchIn(it) }
         val corpo = if (idxBotao == -1) linhas else linhas.subList(0, idxBotao)
 
-        // 2) Começa depois da última âncora (OS ou loja+distância). Sem âncora: começa do 0.
         val idxOS = corpo.indexOfFirst { ehLinhaOS(it) }
         val idxLoja = corpo.indexOfFirst { REGEX_LOJA_DISTANCIA.matches(it.trim()) }
         val inicio = maxOf(idxOS, idxLoja) + 1
 
-        // 3) Percorre acumulando fragmentos no segmento atual
         val partesColeta = mutableListOf<String>()
         val entregas = mutableListOf<MutableList<String>>()
         var atual: MutableList<String> = partesColeta
@@ -146,8 +144,6 @@ object EnderecoExtractor {
         val coleta = juntar(partesColeta)
         val destinos = entregas.map { juntar(it) }.filter { it.isNotBlank() }.toMutableList()
 
-        // Obs.: o MainActivity/Service deduplica por texto, então este retorno
-        // só entra na lista se a dedupe permitir endereço repetido.
         if (temRetorno && coleta.isNotBlank()) destinos.add(coleta)
 
         return ResultadoEndereco(coleta, destinos, nomeApp)
@@ -156,9 +152,6 @@ object EnderecoExtractor {
     private fun juntar(partes: List<String>): String =
         partes.joinToString(" ").replace(Regex("""\s+"""), " ").trim()
 
-    // ---------------------------------------------------------------
-    // iFood e 99 (lógica original, só trocando os helpers)
-    // ---------------------------------------------------------------
     private fun extrairIfood(linhas: List<String>): ResultadoEndereco {
         var coleta = ""
         val destinos = mutableListOf<String>()
@@ -188,20 +181,56 @@ object EnderecoExtractor {
     }
 
     private fun extrair99(linhas: List<String>): ResultadoEndereco {
-        val idxKm = linhas.indexOfFirst { it.lowercase().contains("km") }
+        var coleta = ""
+        val destinos = mutableListOf<String>()
 
-        val candidatas = linhas.filterIndexed { index, linha ->
-            val ehDepoisDoKm = if (idxKm != -1) index > idxKm else true
-            ehDepoisDoKm && ehEnderecoValido(linha)
+        // 1. Encontra o início do card de oferta do 99 (pela linha de preço R$ ou Entrega Moto / Aceitar)
+        val idxInicioCard = linhas.indexOfFirst {
+            val min = it.lowercase()
+            min.startsWith("r$") || min.contains("r$") || min.contains("entrega moto") || min.contains("pop")
         }
 
-        val coleta = candidatas.getOrNull(0) ?: ""
-        val destinos = if (candidatas.size > 1) listOf(candidatas[1]) else emptyList()
+        val cardLinhas = if (idxInicioCard != -1) linhas.subList(idxInicioCard, linhas.size) else linhas
+
+        // 2. Procura por linhas que indicam tempo/distância no card ex: "5 min (887 m)" ou "9 min (4,9 km)"
+        val indicesTempoDistancia = mutableListOf<Int>()
+        for (i in cardLinhas.indices) {
+            val min = cardLinhas[i].lowercase()
+            if (min.contains("min") && (min.contains("km") || min.contains("m)") || min.contains("m") || min.contains("("))) {
+                indicesTempoDistancia.add(i)
+            }
+        }
+
+        if (indicesTempoDistancia.size >= 1) {
+            val idxColetaTempo = indicesTempoDistancia[0]
+            if (idxColetaTempo + 1 < cardLinhas.size) {
+                val candColeta = cardLinhas[idxColetaTempo + 1]
+                if (ehEnderecoValido(candColeta)) {
+                    coleta = candColeta
+                }
+            }
+        }
+
+        if (indicesTempoDistancia.size >= 2) {
+            val idxEntregaTempo = indicesTempoDistancia[1]
+            if (idxEntregaTempo + 1 < cardLinhas.size) {
+                val candEntrega = cardLinhas[idxEntregaTempo + 1]
+                if (ehEnderecoValido(candEntrega)) {
+                    destinos.add(candEntrega)
+                }
+            }
+        }
+
+        // Fallback para 99 caso os marcadores de tempo não estejam no formato padrão
+        if (coleta.isEmpty() || destinos.isEmpty()) {
+            val candidatas = cardLinhas.filter { ehEnderecoValido(it) && !it.lowercase().contains("não afeta") && !it.lowercase().contains("perfil") }
+            if (coleta.isEmpty() && candidatas.isNotEmpty()) coleta = candidatas[0]
+            if (destinos.isEmpty() && candidatas.size > 1) destinos.add(candidatas[1])
+        }
 
         return ResultadoEndereco(coleta, destinos, "99")
     }
 
-    // Usado só por iFood/99
     private fun mesclarLinhasQuebradas(linhas: List<String>): List<String> {
         if (linhas.isEmpty()) return emptyList()
         val resultado = mutableListOf<String>()
@@ -231,9 +260,6 @@ object EnderecoExtractor {
         return resultado
     }
 
-    // ---------------------------------------------------------------
-    // Limpeza final do endereço (para o Google Maps entender melhor)
-    // ---------------------------------------------------------------
     private val REGEX_PREFIXO = Regex(
         """^(retirada|coleta|origem|entrega|destino|entregar em)\s*[:\-]\s*""",
         RegexOption.IGNORE_CASE
@@ -242,7 +268,8 @@ object EnderecoExtractor {
     private fun limparEndereco(texto: String): String {
         var t = texto.trim()
         t = REGEX_PREFIXO.replace(t, "")
-        t = REGEX_LADO_RUA.replace(t, "")          // remove "(lado ímpar)" / "(lado par)"
+        t = REGEX_LADO_RUA.replace(t, "")
+        t = t.replace(" . ", ". ").replace(" .", ".")
         return t.replace(Regex("""\s+"""), " ").trim()
     }
 
@@ -250,8 +277,10 @@ object EnderecoExtractor {
         val texto = linhas.joinToString(" ").lowercase()
         return when {
             texto.contains("ifood") || texto.contains("coleta no restaurante") -> "IFOOD"
-            texto.contains("yes delivery") || texto.contains("yesdelivery") -> "YES_DELIVERY"
-            else -> "NOVA_DELIVERY"
+            texto.contains("yes delivery") || texto.contains("yesdelivery") || texto.contains("delivery yes") -> "YES_DELIVERY"
+            texto.contains("nova delivery") || texto.contains("novadelivery") || texto.contains("1º parada") || texto.contains("1a parada") -> "NOVA_DELIVERY"
+            texto.contains("99") || texto.contains("não afeta a ta") || texto.contains("entrega moto") || texto.contains("perfil premium") -> "99"
+            else -> "99"
         }
     }
 

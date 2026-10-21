@@ -114,10 +114,10 @@ class CapturaTelaService : AccessibilityService() {
         val pkgName = event?.packageName?.toString() ?: return
         if (obterNomeApp(pkgName) == null || leituraAgendada) return
 
-        Log.d("CAPTURA_DELIVERY", ">>> App de delivery ativo ($pkgName)! Capturando tela instantaneamente...")
+        Log.d("CAPTURA_DELIVERY", ">>> App de delivery ativo ($pkgName)! Capturando tela...")
 
         leituraAgendada = true
-        handler.post(disparoLeitura) // Captura instantânea!
+        handler.postDelayed(disparoLeitura, 600)
     }
 
     private fun coletarTextos(
@@ -125,14 +125,26 @@ class CapturaTelaService : AccessibilityService() {
         textos: MutableList<String>,
     ) {
         val texto = node.text?.toString()?.trim()
+        val desc = node.contentDescription?.toString()?.trim()
 
         if (!texto.isNullOrEmpty()) {
             textos.add(texto)
+        } else if (!desc.isNullOrEmpty()) {
+            textos.add(desc)
         }
 
         for (i in 0 until node.childCount) {
             val filho = node.getChild(i) ?: continue
             coletarTextos(filho, textos)
+        }
+    }
+
+    private fun jaExisteEndereco(paradas: List<Parada>, novoEndereco: String): Boolean {
+        val novoNorm = novoEndereco.lowercase().replace(Regex("""[^a-z0-9]"""), "")
+        if (novoNorm.isBlank()) return true
+        return paradas.any {
+            val exNorm = it.endereco.lowercase().replace(Regex("""[^a-z0-9]"""), "")
+            exNorm == novoNorm || exNorm.contains(novoNorm) || novoNorm.contains(exNorm)
         }
     }
 
@@ -142,13 +154,13 @@ class CapturaTelaService : AccessibilityService() {
         val paradasAtuais = ParadaStorage.fromJson(paradasJson).toMutableList()
 
         var alterou = false
-        if (resultado.coleta.isNotBlank() && paradasAtuais.none { it.endereco.equals(resultado.coleta, ignoreCase = true) }) {
+        if (resultado.coleta.isNotBlank() && !jaExisteEndereco(paradasAtuais, resultado.coleta)) {
             paradasAtuais.add(Parada(endereco = resultado.coleta, appOrigem = resultado.appIdentificado))
             alterou = true
         }
 
         for (dest in resultado.destinos) {
-            if (dest.isNotBlank() && paradasAtuais.none { it.endereco.equals(dest, ignoreCase = true) }) {
+            if (dest.isNotBlank() && !jaExisteEndereco(paradasAtuais, dest)) {
                 paradasAtuais.add(Parada(endereco = dest, appOrigem = resultado.appIdentificado))
                 alterou = true
             }
