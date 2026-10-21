@@ -22,6 +22,7 @@ class ParadaAdapter(
         val lblAppTag: TextView = view.findViewById(R.id.lblAppTag)
         val txtEndereco: EditText = view.findViewById(R.id.txtEndereco)
         val btnRemover: ImageButton = view.findViewById(R.id.btnRemover)
+        var textWatcher: TextWatcher? = null
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ParadaViewHolder {
@@ -33,20 +34,31 @@ class ParadaAdapter(
     override fun onBindViewHolder(holder: ParadaViewHolder, position: Int) {
         val item = paradas[position]
 
+        // 1. Remove o listener antigo antes de alterar o texto para não corromper outros itens
+        holder.textWatcher?.let {
+            holder.txtEndereco.removeTextChangedListener(it)
+        }
+
         holder.lblAppTag.text = if (item.appOrigem.isNotBlank()) item.appOrigem else "APP"
+
+        // Desconecta listener do CheckBox durante o rebind
+        holder.chkConcluida.setOnCheckedChangeListener(null)
         holder.chkConcluida.isChecked = item.concluida
         atualizarEstiloTexto(holder.txtEndereco, item.concluida)
 
-        // Evitar chamadas infinitas de TextWatcher durante o rebind
-        holder.txtEndereco.tag = item.id
         holder.txtEndereco.setText(item.endereco)
 
+        // Listener do CheckBox
         holder.chkConcluida.setOnCheckedChangeListener { _, isChecked ->
-            item.concluida = isChecked
-            atualizarEstiloTexto(holder.txtEndereco, isChecked)
-            onItemChanged()
+            val pos = holder.bindingAdapterPosition
+            if (pos != RecyclerView.NO_POSITION && pos < paradas.size) {
+                paradas[pos].concluida = isChecked
+                atualizarEstiloTexto(holder.txtEndereco, isChecked)
+                onItemChanged()
+            }
         }
 
+        // Listener do Botão Remover
         holder.btnRemover.setOnClickListener {
             val currentPos = holder.bindingAdapterPosition
             if (currentPos != RecyclerView.NO_POSITION && currentPos < paradas.size) {
@@ -56,16 +68,24 @@ class ParadaAdapter(
             }
         }
 
-        holder.txtEndereco.addTextChangedListener(object : TextWatcher {
+        // 2. Cria um novo TextWatcher vinculado estritamente à posição atual do ViewHolder
+        val watcher = object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
-                if (holder.txtEndereco.tag == item.id) {
-                    item.endereco = s?.toString() ?: ""
-                    onItemChanged()
+                val currentPos = holder.bindingAdapterPosition
+                if (currentPos != RecyclerView.NO_POSITION && currentPos < paradas.size) {
+                    val novoTexto = s?.toString() ?: ""
+                    if (paradas[currentPos].endereco != novoTexto) {
+                        paradas[currentPos].endereco = novoTexto
+                        onItemChanged()
+                    }
                 }
             }
-        })
+        }
+
+        holder.textWatcher = watcher
+        holder.txtEndereco.addTextChangedListener(watcher)
     }
 
     private fun atualizarEstiloTexto(editText: EditText, concluida: Boolean) {

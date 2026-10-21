@@ -78,6 +78,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnRota.setOnClickListener {
+            currentFocus?.clearFocus()
             salvarUltimosEnderecos()
             abrirGoogleMaps()
         }
@@ -258,10 +259,47 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun limparParaGoogleMaps(endereco: String): String {
+        var e = endereco.trim()
+
+        e = e.replace(Regex("""\(.*?\)"""), "").trim()
+
+        val ruidos = listOf("problema", "lado ímpar", "lado impar", "lado par")
+        for (r in ruidos) {
+            e = e.replace(Regex("(?i)\\b$r\\b"), "").trim()
+        }
+
+        if (e.startsWith("R. ", ignoreCase = true)) e = "Rua " + e.substring(3)
+        if (e.startsWith("Av. ", ignoreCase = true)) e = "Avenida " + e.substring(4)
+        if (e.startsWith("Al. ", ignoreCase = true)) e = "Alameda " + e.substring(4)
+        if (e.startsWith("Pr. ", ignoreCase = true)) e = "Praça " + e.substring(4)
+
+        if (e.contains("Santa Bárbara", ignoreCase = true) || e.endsWith("d'", ignoreCase = true)) {
+            e = e.replace(Regex("(?i),?\\s*Santa Bárbara.*$"), "")
+            e = "$e, Santa Bárbara d'Oeste - SP"
+        } else if (e.endsWith("Ameri", ignoreCase = true) || e.endsWith("Americ", ignoreCase = true) || e.endsWith("Americana", ignoreCase = true)) {
+            e = e.replace(Regex("(?i),?\\s*Ameri.*$"), "")
+            e = "$e, Americana - SP"
+        } else if (!e.contains("Americana", ignoreCase = true) && !e.contains("Santa Bárbara", ignoreCase = true)) {
+            e = "$e, Americana - SP"
+        }
+
+        return e.replace(Regex("""\s+-\s+"""), ", ")
+            .replace(Regex("""\s*,\s*,\s*"""), ", ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .removeSuffix(",")
+            .removeSuffix("-")
+            .trim()
+    }
+
     private fun abrirGoogleMaps() {
         val origemDigitada = binding.txtOrigem.text.toString().trim()
 
-        val paradasPendentes = listaParadas.filter { !it.concluida && it.endereco.isNotBlank() }
+        val paradasPendentes = listaParadas
+            .filter { !it.concluida && it.endereco.isNotBlank() }
+            .map { limparParaGoogleMaps(it.endereco) }
+            .filter { it.isNotBlank() }
 
         if (paradasPendentes.isEmpty()) {
             Toast.makeText(this, "Nenhuma parada pendente na rota!", Toast.LENGTH_SHORT).show()
@@ -275,21 +313,30 @@ class MainActivity : AppCompatActivity() {
         val urlBuilder = StringBuilder("https://www.google.com/maps/dir/?api=1")
 
         if (!usarLocalizacaoAtual) {
-            urlBuilder.append("&origin=${Uri.encode(origemDigitada)}")
+            val origemLimpa = limparParaGoogleMaps(origemDigitada)
+            urlBuilder.append("&origin=${Uri.encode(origemLimpa)}")
         }
 
-        val destinoFinal = paradasPendentes.last().endereco
-        val waypoints = paradasPendentes.dropLast(1).map { it.endereco }
+        val destinoFinal = paradasPendentes.last()
+        val waypoints = paradasPendentes.dropLast(1)
 
         urlBuilder.append("&destination=${Uri.encode(destinoFinal)}")
 
         if (waypoints.isNotEmpty()) {
-            urlBuilder.append("&waypoints=${Uri.encode(waypoints.joinToString("|"))}")
+            val waypointsFormatados = waypoints.joinToString("|") { Uri.encode(it) }
+            urlBuilder.append("&waypoints=$waypointsFormatados")
         }
 
         val url = Uri.parse(urlBuilder.toString())
         val intent = Intent(Intent.ACTION_VIEW, url)
-        startActivity(intent)
+        intent.setPackage("com.google.android.apps.maps")
+
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            val fallbackIntent = Intent(Intent.ACTION_VIEW, url)
+            startActivity(fallbackIntent)
+        }
     }
 
     private fun novaRota() {
