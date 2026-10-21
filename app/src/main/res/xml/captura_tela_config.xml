@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <accessibility-service
     xmlns:android="http://schemas.android.com/apk/res/android"
+    android:packageNames="com.taxis99,com.app99,com.app99.driver,com.didiglobal.driver,com.didiglobal.driver.pt,com.xiaojukeji.didi.brazil.driver,br.com.brainys.ifood.driver,br.com.ifood.driver,br.com.ifood.driver.app,com.ifood.driver,br.com.novadelivery.taxi.taximachine,br.com.novadelivery.driver,com.novadelivery.driver,br.com.yesdelivery.driver,com.yesdelivery.driver"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:notificationTimeout="300"
