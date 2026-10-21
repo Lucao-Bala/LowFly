@@ -19,7 +19,7 @@ class CapturaTelaService : AccessibilityService() {
 
         fun estaAtivo(): Boolean = instancia != null
 
-        fun forcarCaptura(delayMs: Long = 2000L) {
+        fun forcarCaptura(delayMs: Long = 1000L) {
             instancia?.agendarCapturaForcada(delayMs)
         }
     }
@@ -100,7 +100,7 @@ class CapturaTelaService : AccessibilityService() {
         Log.d("CAPTURA_DELIVERY", "Coleta: ${resultado.coleta}")
         Log.d("CAPTURA_DELIVERY", "Destinos: ${resultado.destinos.joinToString(", ")}")
 
-        if (resultado.coleta.isNotEmpty() && resultado.destinos.isNotEmpty()) {
+        if (resultado.coleta.isNotEmpty() || resultado.destinos.isNotEmpty()) {
             salvarEmCache(resultado)
         }
     }
@@ -114,10 +114,10 @@ class CapturaTelaService : AccessibilityService() {
         val pkgName = event?.packageName?.toString() ?: return
         if (obterNomeApp(pkgName) == null || leituraAgendada) return
 
-        Log.d("CAPTURA_DELIVERY", ">>> App de delivery ativo ($pkgName)! Agendando leitura da tela...")
+        Log.d("CAPTURA_DELIVERY", ">>> App de delivery ativo ($pkgName)! Capturando tela instantaneamente...")
 
         leituraAgendada = true
-        handler.postDelayed(disparoLeitura, 1500)
+        handler.post(disparoLeitura) // Captura instantânea!
     }
 
     private fun coletarTextos(

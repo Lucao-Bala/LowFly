@@ -131,7 +131,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="2dp"
                 android:layout_weight="1"
-                android:text="🔄 REFRESH (2s)"
+                android:text="🔄 REFRESH (1s)"
                 android:textSize="11sp" />
 
             <Button

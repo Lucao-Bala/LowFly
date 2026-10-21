@@ -362,8 +362,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        Toast.makeText(this, "Abra o app de entrega na tela da corrida... Capturando em 2s!", Toast.LENGTH_LONG).show()
-        CapturaTelaService.forcarCaptura(2000L)
+        Toast.makeText(this, "Abra o app de entrega na tela da corrida... Capturando em 1s!", Toast.LENGTH_SHORT).show()
+        CapturaTelaService.forcarCaptura(1000L)
     }
 
     private fun salvarUltimosEnderecos() {
