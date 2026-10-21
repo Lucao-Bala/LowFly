@@ -73,6 +73,10 @@ class MainActivity : AppCompatActivity() {
             adicionarParadaManualmente()
         }
 
+        binding.btnRefresh.setOnClickListener {
+            executarRefreshCaptura()
+        }
+
         binding.btnCarregarPrint.setOnClickListener {
             selecionarPrintLauncher.launch("image/*")
         }
@@ -349,6 +353,17 @@ class MainActivity : AppCompatActivity() {
 
         atualizarBotaoRota()
         Toast.makeText(this, "Todas as rotas foram resetadas!", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun executarRefreshCaptura() {
+        if (!CapturaTelaService.estaAtivo()) {
+            Toast.makeText(this, "Ative a Acessibilidade para usar o Refresh", Toast.LENGTH_LONG).show()
+            abrirConfiguracoesAcessibilidade()
+            return
+        }
+
+        Toast.makeText(this, "Abra o app de entrega na tela da corrida... Capturando em 2s!", Toast.LENGTH_LONG).show()
+        CapturaTelaService.forcarCaptura(2000L)
     }
 
     private fun salvarUltimosEnderecos() {

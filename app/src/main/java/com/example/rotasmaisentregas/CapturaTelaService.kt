@@ -14,6 +14,16 @@ import android.view.accessibility.AccessibilityNodeInfo
 
 class CapturaTelaService : AccessibilityService() {
 
+    companion object {
+        var instancia: CapturaTelaService? = null
+
+        fun estaAtivo(): Boolean = instancia != null
+
+        fun forcarCaptura(delayMs: Long = 2000L) {
+            instancia?.agendarCapturaForcada(delayMs)
+        }
+    }
+
     private val handler = Handler(Looper.getMainLooper())
     private var leituraAgendada = false
 
@@ -36,9 +46,37 @@ class CapturaTelaService : AccessibilityService() {
         "com.yesdelivery.driver" to "YES_DELIVERY"
     )
 
+    override fun onCreate() {
+        super.onCreate()
+        instancia = this
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (instancia == this) instancia = null
+    }
+
     private fun obterNomeApp(pkgName: String): String? {
         val min = pkgName.lowercase()
         return PACOTES[pkgName] ?: PACOTES.entries.firstOrNull { min.contains(it.key.lowercase()) }?.value
+    }
+
+    fun agendarCapturaForcada(delayMs: Long) {
+        handler.postDelayed({
+            val raiz = rootInActiveWindow
+            if (raiz != null) {
+                val pkgJanela = raiz.packageName?.toString() ?: ""
+                val appIdentificado = obterNomeApp(pkgJanela) ?: "DELIVERY"
+                val textos = mutableListOf<String>()
+                coletarTextos(raiz, textos)
+
+                Log.d("CAPTURA_DELIVERY", "=== REFRESH FORÇADO NA TELA ($pkgJanela) ===")
+                val resultado = EnderecoExtractor.extrairEnderecos(textos, appIdentificado)
+                if (resultado.coleta.isNotEmpty() || resultado.destinos.isNotEmpty()) {
+                    salvarEmCache(resultado)
+                }
+            }
+        }, delayMs)
     }
 
     private val lerTela = Runnable {
@@ -46,7 +84,6 @@ class CapturaTelaService : AccessibilityService() {
 
         val pkgJanela = raiz.packageName?.toString() ?: return@Runnable
         val appIdentificado = obterNomeApp(pkgJanela) ?: run {
-            Log.d("CAPTURA_DELIVERY", "Janela ativa ($pkgJanela) não é de aplicativo de delivery permitido. Leitura cancelada.")
             return@Runnable
         }
 
