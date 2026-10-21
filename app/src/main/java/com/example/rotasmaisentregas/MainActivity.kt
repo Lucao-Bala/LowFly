@@ -1,13 +1,19 @@
 package com.example.rotasmaisentregas
 
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
+import android.text.TextUtils
 import android.util.Log
+import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -22,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val listaParadas = mutableListOf<Parada>()
     private lateinit var paradaAdapter: ParadaAdapter
+    private var jaPediuAcessibilidadeNestaSessao = false
 
     private val appsDisponiveis = arrayOf(
         "Detectar Automático",
@@ -58,6 +65,10 @@ class MainActivity : AppCompatActivity() {
         configurarRecyclerView()
         carregarUltimosEnderecos()
 
+        binding.btnAtivarAcessibilidade.setOnClickListener {
+            abrirConfiguracoesAcessibilidade()
+        }
+
         binding.btnAdicionarParada.setOnClickListener {
             adicionarParadaManualmente()
         }
@@ -79,6 +90,69 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         carregarUltimosEnderecos()
+        verificarEAlertarAcessibilidade()
+    }
+
+    private fun verificarEAlertarAcessibilidade() {
+        val estaAtivo = isAccessibilityServiceEnabled(this, CapturaTelaService::class.java)
+
+        if (estaAtivo) {
+            binding.bannerAcessibilidade.visibility = View.GONE
+        } else {
+            binding.bannerAcessibilidade.visibility = View.VISIBLE
+
+            if (!jaPediuAcessibilidadeNestaSessao) {
+                jaPediuAcessibilidadeNestaSessao = true
+                mostrarDialogAcessibilidade()
+            }
+        }
+    }
+
+    private fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<*>): Boolean {
+        val expectedComponentName = ComponentName(context, serviceClass)
+        val enabledServicesSetting = Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+
+        val stringColonSplitter = TextUtils.SimpleStringSplitter(':')
+        stringColonSplitter.setString(enabledServicesSetting)
+
+        while (stringColonSplitter.hasNext()) {
+            val componentNameString = stringColonSplitter.next()
+            val enabledComponent = ComponentName.unflattenFromString(componentNameString)
+            if (enabledComponent != null && enabledComponent == expectedComponentName) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun mostrarDialogAcessibilidade() {
+        AlertDialog.Builder(this)
+            .setTitle("Permissão de Acessibilidade Necessária")
+            .setMessage("Para capturar automaticamente os endereços quando as entregas surgirem na tela dos apps parceiros (99, iFood, Nova, Yes), é necessário ativar o serviço de acessibilidade do aplicativo.\n\nDeseja abrir as configurações para ativar agora?")
+            .setPositiveButton("ATIVAR AGORA") { _, _ ->
+                abrirConfiguracoesAcessibilidade()
+            }
+            .setNegativeButton("AGORA NÃO", null)
+            .show()
+    }
+
+    private fun abrirConfiguracoesAcessibilidade() {
+        try {
+            val showArgs = "${packageName}/${CapturaTelaService::class.java.canonicalName}"
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                putExtra(":settings:fragment_args_key", showArgs)
+                putExtra(":settings:show_fragment_args", Bundle().apply {
+                    putString(":settings:fragment_args_key", showArgs)
+                })
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivity(intent)
+        }
     }
 
     private fun configurarSpinner() {
@@ -114,56 +188,69 @@ class MainActivity : AppCompatActivity() {
 
             recognizer.process(image)
                 .addOnSuccessListener { visionText ->
-                    val todasLinhas = visionText.textBlocks.flatMap { block ->
-                        block.lines.map { it.text.trim() }
-                    }.filter { it.isNotBlank() }
+                    runOnUiThread {
+                        try {
+                            val todasLinhas = visionText.textBlocks
+                                .flatMap { it.lines }
+                                .sortedWith(compareBy({ it.boundingBox?.top ?: 0 }, { it.boundingBox?.left ?: 0 }))
+                                .map { it.text.trim() }
+                                .filter { it.isNotBlank() }
 
-                    Log.d("PRINT_OCR", "=== TODAS AS LINHAS LIDAS DA IMAGEM ===")
-                    todasLinhas.forEachIndexed { i, l -> Log.d("PRINT_OCR", "[$i] $l") }
+                            Log.d("PRINT_OCR", "=== TODAS AS LINHAS LIDAS DA IMAGEM ===")
+                            todasLinhas.forEachIndexed { i, l -> Log.d("PRINT_OCR", "[$i] $l") }
 
-                    val appSelecionado = when (binding.spinnerApp.selectedItemPosition) {
-                        1 -> "99"
-                        2 -> "IFOOD"
-                        3 -> "NOVA_DELIVERY"
-                        4 -> "YES_DELIVERY"
-                        else -> "AUTO"
-                    }
+                            val appSelecionado = when (binding.spinnerApp.selectedItemPosition) {
+                                1 -> "99"
+                                2 -> "IFOOD"
+                                3 -> "NOVA_DELIVERY"
+                                4 -> "YES_DELIVERY"
+                                else -> "AUTO"
+                            }
 
-                    val resultado = EnderecoExtractor.extrairEnderecos(todasLinhas, appSelecionado)
+                            val resultado = EnderecoExtractor.extrairEnderecos(todasLinhas, appSelecionado)
 
-                    Log.d("PRINT_OCR", "=== RESULTADO EXTRAÍDO (${resultado.appIdentificado}) ===")
-                    Log.d("PRINT_OCR", "Coleta: ${resultado.coleta}")
-                    Log.d("PRINT_OCR", "Destino: ${resultado.destino}")
+                            Log.d("PRINT_OCR", "=== RESULTADO EXTRAÍDO (${resultado.appIdentificado}) ===")
+                            Log.d("PRINT_OCR", "Coleta: ${resultado.coleta}")
+                            Log.d("PRINT_OCR", "Destinos: ${resultado.destinos.joinToString(", ")}")
 
-                    var novasAdicionadas = 0
+                            var novasAdicionadas = 0
 
-                    if (resultado.coleta.isNotBlank() && listaParadas.none { it.endereco.equals(resultado.coleta, ignoreCase = true) }) {
-                        listaParadas.add(Parada(endereco = resultado.coleta, appOrigem = resultado.appIdentificado))
-                        novasAdicionadas++
-                    }
+                            if (resultado.coleta.isNotBlank() && listaParadas.none { it.endereco.equals(resultado.coleta, ignoreCase = true) }) {
+                                listaParadas.add(Parada(endereco = resultado.coleta, appOrigem = resultado.appIdentificado))
+                                novasAdicionadas++
+                            }
 
-                    if (resultado.destino.isNotBlank() && listaParadas.none { it.endereco.equals(resultado.destino, ignoreCase = true) }) {
-                        listaParadas.add(Parada(endereco = resultado.destino, appOrigem = resultado.appIdentificado))
-                        novasAdicionadas++
-                    }
+                            for (dest in resultado.destinos) {
+                                if (dest.isNotBlank() && listaParadas.none { it.endereco.equals(dest, ignoreCase = true) }) {
+                                    listaParadas.add(Parada(endereco = dest, appOrigem = resultado.appIdentificado))
+                                    novasAdicionadas++
+                                }
+                            }
 
-                    if (novasAdicionadas > 0) {
-                        paradaAdapter.notifyDataSetChanged()
-                        salvarUltimosEnderecos()
-                        atualizarBotaoRota()
+                            if (novasAdicionadas > 0) {
+                                paradaAdapter.notifyDataSetChanged()
+                                salvarUltimosEnderecos()
+                                atualizarBotaoRota()
 
-                        Toast.makeText(
-                            this,
-                            "$novasAdicionadas nova(s) parada(s) do ${resultado.appIdentificado} adicionada(s)!",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    } else {
-                        Toast.makeText(this, "Nenhuma nova parada encontrada no print.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    this,
+                                    "$novasAdicionadas nova(s) parada(s) do ${resultado.appIdentificado} adicionada(s)!",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                Toast.makeText(this, "Nenhuma nova parada encontrada no print.", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Throwable) {
+                            Log.e("PRINT_OCR", "Erro ao processar resultado do OCR", e)
+                            Toast.makeText(this, "Erro ao processar imagem: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
                 .addOnFailureListener { e ->
-                    Log.e("PRINT_OCR", "Erro no OCR", e)
-                    Toast.makeText(this, "Erro ao ler print: ${e.message}", Toast.LENGTH_SHORT).show()
+                    runOnUiThread {
+                        Log.e("PRINT_OCR", "Erro no OCR", e)
+                        Toast.makeText(this, "Erro ao ler print: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
                 }
         } catch (e: Exception) {
             Log.e("PRINT_OCR", "Erro ao carregar imagem", e)
@@ -174,7 +261,6 @@ class MainActivity : AppCompatActivity() {
     private fun abrirGoogleMaps() {
         val origemDigitada = binding.txtOrigem.text.toString().trim()
 
-        // Filtra apenas as paradas PENDENTES (não concluídas/não marcadas) e com endereço preenchido
         val paradasPendentes = listaParadas.filter { !it.concluida && it.endereco.isNotBlank() }
 
         if (paradasPendentes.isEmpty()) {

@@ -13,7 +13,6 @@ class CapturaTelaService : AccessibilityService() {
 
     private fun ehPacotePermitido(pkgName: String): Boolean {
         val min = pkgName.lowercase()
-        // Validação estrita: apenas pacotes oficiais de delivery da 99, iFood, Nova Delivery e Yes Delivery
         val eh99 = min.contains("taxis99") || min.contains("didiglobal.driver") || min == "com.app99" || min == "com.app99.driver"
         val ehIfood = min.contains("ifood") && min.contains("driver")
         val ehNova = min.contains("novadelivery") || min.contains("taximachine")
@@ -25,7 +24,6 @@ class CapturaTelaService : AccessibilityService() {
     private val lerTela = Runnable {
         val raiz = rootInActiveWindow ?: return@Runnable
 
-        // Dupla checagem: garante que a janela ATIVA no exato momento da leitura ainda seja de um app de delivery permitido
         val pkgJanela = raiz.packageName?.toString() ?: return@Runnable
         if (!ehPacotePermitido(pkgJanela)) {
             Log.d("CAPTURA_DELIVERY", "Janela ativa ($pkgJanela) não é de aplicativo de delivery permitido. Leitura cancelada.")
@@ -43,25 +41,23 @@ class CapturaTelaService : AccessibilityService() {
         val resultado = EnderecoExtractor.extrairEnderecos(textos)
         Log.d("CAPTURA_DELIVERY", "=== RESULTADO EXTRAÍDO (${resultado.appIdentificado}) ===")
         Log.d("CAPTURA_DELIVERY", "Coleta: ${resultado.coleta}")
-        Log.d("CAPTURA_DELIVERY", "Destino: ${resultado.destino}")
+        Log.d("CAPTURA_DELIVERY", "Destinos: ${resultado.destinos.joinToString(", ")}")
 
-        if (resultado.coleta.isNotEmpty() || resultado.destino.isNotEmpty()) {
+        if (resultado.coleta.isNotEmpty() || resultado.destinos.isNotEmpty()) {
             salvarEmCache(resultado)
         }
     }
-
+    private var leituraAgendada = false
+    private val disparoLeitura = Runnable {
+        leituraAgendada = false
+        lerTela.run()
+    }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null) return
+        val pkgName = event?.packageName?.toString() ?: return
+        if (!ehPacotePermitido(pkgName) || leituraAgendada) return
 
-        val pkgName = event.packageName?.toString() ?: return
-
-        // Descarta imediatamente qualquer aplicativo que NÃO seja 99, iFood, Nova Delivery ou Yes Delivery (como TikTok, WhatsApp, etc)
-        if (!ehPacotePermitido(pkgName)) return
-
-        Log.d("CAPTURA_DELIVERY", ">>> App de delivery ativo ($pkgName)! Agendando leitura da tela...")
-
-        handler.removeCallbacks(lerTela)
-        handler.postDelayed(lerTela, 1500)
+        leituraAgendada = true
+        handler.postDelayed(disparoLeitura, 1500)
     }
 
     private fun coletarTextos(
@@ -90,9 +86,12 @@ class CapturaTelaService : AccessibilityService() {
             paradasAtuais.add(Parada(endereco = resultado.coleta, appOrigem = resultado.appIdentificado))
             alterou = true
         }
-        if (resultado.destino.isNotBlank() && paradasAtuais.none { it.endereco.equals(resultado.destino, ignoreCase = true) }) {
-            paradasAtuais.add(Parada(endereco = resultado.destino, appOrigem = resultado.appIdentificado))
-            alterou = true
+
+        for (dest in resultado.destinos) {
+            if (dest.isNotBlank() && paradasAtuais.none { it.endereco.equals(dest, ignoreCase = true) }) {
+                paradasAtuais.add(Parada(endereco = dest, appOrigem = resultado.appIdentificado))
+                alterou = true
+            }
         }
 
         if (alterou) {
@@ -101,6 +100,7 @@ class CapturaTelaService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
-        handler.removeCallbacks(lerTela)
+        handler.removeCallbacks(disparoLeitura)
+        leituraAgendada = false
     }
 }
