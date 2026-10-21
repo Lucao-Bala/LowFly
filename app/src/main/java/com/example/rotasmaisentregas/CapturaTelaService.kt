@@ -11,13 +11,31 @@ class CapturaTelaService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
 
+    private fun ehPacotePermitido(pkgName: String): Boolean {
+        val min = pkgName.lowercase()
+        // Validação estrita: apenas pacotes oficiais de delivery da 99, iFood, Nova Delivery e Yes Delivery
+        val eh99 = min.contains("taxis99") || min.contains("didiglobal.driver") || min == "com.app99" || min == "com.app99.driver"
+        val ehIfood = min.contains("ifood") && min.contains("driver")
+        val ehNova = min.contains("novadelivery") || min.contains("taximachine")
+        val ehYes = min.contains("yesdelivery")
+
+        return eh99 || ehIfood || ehNova || ehYes
+    }
+
     private val lerTela = Runnable {
         val raiz = rootInActiveWindow ?: return@Runnable
+
+        // Dupla checagem: garante que a janela ATIVA no exato momento da leitura ainda seja de um app de delivery permitido
+        val pkgJanela = raiz.packageName?.toString() ?: return@Runnable
+        if (!ehPacotePermitido(pkgJanela)) {
+            Log.d("CAPTURA_DELIVERY", "Janela ativa ($pkgJanela) não é de aplicativo de delivery permitido. Leitura cancelada.")
+            return@Runnable
+        }
 
         val textos = mutableListOf<String>()
         coletarTextos(raiz, textos)
 
-        Log.d("CAPTURA_DELIVERY", "=== TEXTOS ENCONTRADOS NA TELA ===")
+        Log.d("CAPTURA_DELIVERY", "=== TEXTOS ENCONTRADOS NA TELA ($pkgJanela) ===")
         textos.forEach {
             Log.d("CAPTURA_DELIVERY", it)
         }
@@ -37,19 +55,10 @@ class CapturaTelaService : AccessibilityService() {
 
         val pkgName = event.packageName?.toString() ?: return
 
-        // Registra o pacote de QUALQUER aplicativo ativando a tela para você ver no Logcat
-        Log.d("CAPTURA_DELIVERY", "Tela ativa detectada no pacote: $pkgName")
+        // Descarta imediatamente qualquer aplicativo que NÃO seja 99, iFood, Nova Delivery ou Yes Delivery (como TikTok, WhatsApp, etc)
+        if (!ehPacotePermitido(pkgName)) return
 
-        val ehAppSuportado = pkgName.contains("99") ||
-                pkgName.contains("didi", ignoreCase = true) ||
-                pkgName.contains("driver", ignoreCase = true) ||
-                pkgName.contains("ifood", ignoreCase = true) ||
-                pkgName.contains("novadelivery", ignoreCase = true) ||
-                pkgName.contains("yesdelivery", ignoreCase = true)
-
-        if (!ehAppSuportado) return
-
-        Log.d("CAPTURA_DELIVERY", ">>> App parceiro de delivery reconhecido ($pkgName)! Lendo tela...")
+        Log.d("CAPTURA_DELIVERY", ">>> App de delivery ativo ($pkgName)! Agendando leitura da tela...")
 
         handler.removeCallbacks(lerTela)
         handler.postDelayed(lerTela, 1500)

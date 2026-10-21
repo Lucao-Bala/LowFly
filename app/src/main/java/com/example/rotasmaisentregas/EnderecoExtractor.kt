@@ -12,7 +12,6 @@ object EnderecoExtractor {
         val min = linha.lowercase().trim()
         if (min.length < 4) return false
 
-        // Palavras e textos de menus, botões e status do Android/Apps que NUNCA são endereços
         val palavrasProibidas = listOf(
             "aplicativos ativos", "fechar tudo", "desconectado", "ficar livre",
             "seus horários", "ver horários", "escolher horários", "tela inicial",
@@ -21,10 +20,17 @@ object EnderecoExtractor {
             "página inicial", "carregar print", "gerar rota", "nova rota",
             "minha localização", "paradas da rota", "filtro para print",
             "opcao", "opções", "resposta", "sos", "whatsapp", "tiktok", "mudar na tela",
-            "ficar online", "offline", "saldo", "taxa de aceitação", "cancelar", "conectar"
+            "ficar online", "offline", "saldo", "taxa de aceitação", "cancelar", "conectar",
+            "nuvem 1", "nuvem 2", "nuvem 3", "nuvem", "modal", "detalhes da rota",
+            "entrega pendente", "entrega já aceita", "ver no mapa", "recusar", "aceitar"
         )
 
         if (palavrasProibidas.any { min.contains(it) }) return false
+
+        // Filtro para IDs de pedido e ordens de serviço (ex: "OS 12345", "OS#12", "Pedido #123")
+        if (min.startsWith("os ") || min.startsWith("os#") || min.startsWith("os:") || min.startsWith("id:") || min.startsWith("pedido #")) {
+            return false
+        }
 
         // Descarta linhas de preço, distância isolada e tempo
         if (min.startsWith("r$") || min.contains("r $") || min.endsWith("km") || min.endsWith("min") || min.endsWith("%")) {
@@ -64,8 +70,8 @@ object EnderecoExtractor {
         val textoCompleto = linhas.joinToString(" ").lowercase()
         return when {
             textoCompleto.contains("ifood") || textoCompleto.contains("coleta no restaurante") -> "IFOOD"
-            textoCompleto.contains("nova delivery") || textoCompleto.contains("nova") -> "NOVA_DELIVERY"
-            textoCompleto.contains("yes delivery") || textoCompleto.contains("yes") -> "YES_DELIVERY"
+            textoCompleto.contains("nova delivery") || textoCompleto.contains("novadelivery") || textoCompleto.contains("taximachine") -> "NOVA_DELIVERY"
+            textoCompleto.contains("yes delivery") || textoCompleto.contains("yesdelivery") -> "YES_DELIVERY"
             else -> "99"
         }
     }
@@ -109,10 +115,11 @@ object EnderecoExtractor {
                     !min.contains("ganho") &&
                     !min.contains("detalhes") &&
                     !min.contains("aceitar")
-        }
+        }.filter { ehEnderecoValido(it) }
 
         val idxColeta = candidatas.indexOfFirst {
-            it.lowercase().contains("coleta") || it.lowercase().contains("retirar")
+            val min = it.lowercase()
+            min.contains("coleta") || min.contains("retirar") || min.contains("restaurante")
         }
         if (idxColeta != -1 && idxColeta + 1 < candidatas.size) {
             val cand = candidatas[idxColeta + 1]
@@ -120,37 +127,55 @@ object EnderecoExtractor {
         }
 
         val idxEntrega = candidatas.indexOfFirst {
-            it.lowercase().contains("entrega") || it.lowercase().contains("entregar em") || it.lowercase().contains("cliente")
+            val min = it.lowercase()
+            min.contains("entrega") || min.contains("entregar em") || min.contains("cliente")
         }
         if (idxEntrega != -1 && idxEntrega + 1 < candidatas.size) {
             val cand = candidatas[idxEntrega + 1]
             if (ehEnderecoValido(cand)) destino = cand
         }
 
-        val candidatasValidas = candidatas.filter { ehEnderecoValido(it) }
-        if (coleta.isEmpty()) coleta = candidatasValidas.getOrNull(0) ?: ""
-        if (destino.isEmpty()) destino = candidatasValidas.getOrNull(1) ?: ""
+        if (coleta.isEmpty()) coleta = candidatas.getOrNull(0) ?: ""
+        if (destino.isEmpty()) destino = candidatas.getOrNull(1) ?: ""
 
         return ResultadoEndereco(coleta, destino, "iFood")
     }
 
     private fun extrairNovaDelivery(linhas: List<String>): ResultadoEndereco {
-        val candidatas = linhas.filter { ehEnderecoValido(it) }
-
-        return ResultadoEndereco(
-            coleta = candidatas.getOrNull(0) ?: "",
-            destino = candidatas.getOrNull(1) ?: "",
-            appIdentificado = "Nova Delivery"
-        )
+        return extrairTaximachineOuNova(linhas, "Nova Delivery")
     }
 
     private fun extrairYesDelivery(linhas: List<String>): ResultadoEndereco {
+        return extrairTaximachineOuNova(linhas, "Yes Delivery")
+    }
+
+    private fun extrairTaximachineOuNova(linhas: List<String>, nomeApp: String): ResultadoEndereco {
+        var coleta = ""
+        var destino = ""
+
         val candidatas = linhas.filter { ehEnderecoValido(it) }
 
-        return ResultadoEndereco(
-            coleta = candidatas.getOrNull(0) ?: "",
-            destino = candidatas.getOrNull(1) ?: "",
-            appIdentificado = "Yes Delivery"
-        )
+        val idxColeta = candidatas.indexOfFirst {
+            val min = it.lowercase()
+            min.contains("retirada") || min.contains("coleta") || min.contains("origem")
+        }
+        if (idxColeta != -1 && idxColeta + 1 < candidatas.size) {
+            val cand = candidatas[idxColeta + 1]
+            if (ehEnderecoValido(cand)) coleta = cand
+        }
+
+        val idxEntrega = candidatas.indexOfFirst {
+            val min = it.lowercase()
+            min.contains("entrega") || min.contains("destino") || min.contains("entregar em")
+        }
+        if (idxEntrega != -1 && idxEntrega + 1 < candidatas.size) {
+            val cand = candidatas[idxEntrega + 1]
+            if (ehEnderecoValido(cand)) destino = cand
+        }
+
+        if (coleta.isEmpty()) coleta = candidatas.getOrNull(0) ?: ""
+        if (destino.isEmpty()) destino = candidatas.getOrNull(1) ?: ""
+
+        return ResultadoEndereco(coleta, destino, nomeApp)
     }
 }
