@@ -20,6 +20,7 @@
         android:paddingHorizontal="6dp"
         android:paddingVertical="2dp"
         android:text="99"
+        android:textColor="#333333"
         android:textSize="11sp"
         android:textStyle="bold" />
 
@@ -29,6 +30,8 @@
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:hint="Endereço da parada"
+        android:textColor="#212121"
+        android:textColorHint="#757575"
         android:inputType="text"
         android:textSize="14sp" />
 

@@ -28,16 +28,19 @@ class CapturaTelaService : AccessibilityService() {
     private var leituraAgendada = false
 
     private val PACOTES = mapOf(
-        "com.taxis99" to "99",
-        "com.app99" to "99",
-        "com.app99.driver" to "99",
-        "com.didiglobal.driver" to "99",
-        "com.didiglobal.driver.pt" to "99",
-        "com.xiaojukeji.didi.brazil.driver" to "99",
-        "br.com.brainys.ifood.driver" to "IFOOD",
-        "br.com.ifood.driver" to "IFOOD",
-        "br.com.ifood.driver.app" to "IFOOD",
-        "com.ifood.driver" to "IFOOD",
+        // Desabilitados temporariamente (99 e iFood) para focar em Nova e Yes:
+        // "com.taxis99" to "99",
+        // "com.app99" to "99",
+        // "com.app99.driver" to "99",
+        // "com.didiglobal.driver" to "99",
+        // "com.didiglobal.driver.pt" to "99",
+        // "com.xiaojukeji.didi.brazil.driver" to "99",
+        // "br.com.brainys.ifood.driver" to "IFOOD",
+        // "br.com.ifood.driver" to "IFOOD",
+        // "br.com.ifood.driver.app" to "IFOOD",
+        // "com.ifood.driver" to "IFOOD",
+
+        // Foco Ativo: Nova Delivery e Yes Delivery (Taximachine)
         "br.com.novadelivery.taxi.taximachine" to "NOVA_DELIVERY",
         "br.com.novadelivery.driver" to "NOVA_DELIVERY",
         "com.novadelivery.driver" to "NOVA_DELIVERY",
@@ -66,7 +69,7 @@ class CapturaTelaService : AccessibilityService() {
             val raiz = rootInActiveWindow
             if (raiz != null) {
                 val pkgJanela = raiz.packageName?.toString() ?: ""
-                val appIdentificado = obterNomeApp(pkgJanela) ?: "DELIVERY"
+                val appIdentificado = obterNomeApp(pkgJanela) ?: "NOVA_DELIVERY"
                 val textos = mutableListOf<String>()
                 coletarTextos(raiz, textos)
 
@@ -117,7 +120,7 @@ class CapturaTelaService : AccessibilityService() {
         Log.d("CAPTURA_DELIVERY", ">>> App de delivery ativo ($pkgName)! Capturando tela...")
 
         leituraAgendada = true
-        handler.postDelayed(disparoLeitura, 600)
+        handler.post(disparoLeitura)
     }
 
     private fun coletarTextos(

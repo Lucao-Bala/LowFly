@@ -1,8 +1,15 @@
 package com.example.rotasmaisentregas
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.location.Geocoder
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
@@ -22,6 +29,26 @@ import com.example.rotasmaisentregas.databinding.ActivityMainBinding
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.mapbox.android.gestures.MoveGestureDetector
+import com.mapbox.geojson.Point
+import com.mapbox.maps.CameraOptions
+import com.mapbox.maps.EdgeInsets
+import com.mapbox.maps.Style
+import com.mapbox.maps.extension.style.layers.properties.generated.TextAnchor
+import com.mapbox.maps.plugin.annotation.annotations
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
+import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
+import com.mapbox.maps.plugin.attribution.attribution
+import com.mapbox.maps.plugin.gestures.OnMoveListener
+import com.mapbox.maps.plugin.gestures.gestures
+import com.mapbox.maps.plugin.locationcomponent.createDefault2DPuck
+import com.mapbox.maps.plugin.locationcomponent.location
+import com.mapbox.maps.plugin.logo.logo
+import com.mapbox.maps.plugin.viewport.data.FollowPuckViewportStateOptions
+import com.mapbox.maps.plugin.viewport.viewport
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 class MainActivity : AppCompatActivity() {
 
@@ -29,6 +56,12 @@ class MainActivity : AppCompatActivity() {
     private val listaParadas = mutableListOf<Parada>()
     private lateinit var paradaAdapter: ParadaAdapter
     private var jaPediuAcessibilidadeNestaSessao = false
+
+    private var pointAnnotationManager: PointAnnotationManager? = null
+    private val cacheGeocoding = ConcurrentHashMap<String, Point>()
+    private var versaoAtualizacaoMapa = 0L
+    private var ultimosPontosCamera: List<Point>? = null
+    private var modoSeguirAtivo = false
 
     private val appsDisponiveis = arrayOf(
         "Detectar Automático",
@@ -48,6 +81,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val requestLocationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+
+        if (fineGranted || coarseGranted) {
+            ativarLocalizacaoSePermitido()
+        } else {
+            Toast.makeText(this, "Localização desativada. O mapa exibirá apenas a rota.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -61,6 +107,7 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
+        configurarMapa()
         configurarSpinner()
         configurarRecyclerView()
         carregarUltimosEnderecos()
@@ -73,12 +120,21 @@ class MainActivity : AppCompatActivity() {
             adicionarParadaManualmente()
         }
 
+        binding.btnLimparOrigem.setOnClickListener {
+            binding.txtOrigem.setText("")
+            salvarUltimosEnderecos()
+        }
+
         binding.btnRefresh.setOnClickListener {
             executarRefreshCaptura()
         }
 
         binding.btnCarregarPrint.setOnClickListener {
             selecionarPrintLauncher.launch("image/*")
+        }
+
+        binding.btnCentralizarMim.setOnClickListener {
+            centralizarEmMim()
         }
 
         binding.btnRota.setOnClickListener {
@@ -96,6 +152,213 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         carregarUltimosEnderecos()
         verificarEAlertarAcessibilidade()
+    }
+
+    private fun configurarMapa() {
+        binding.mapView.mapboxMap.loadStyle(Style.MAPBOX_STREETS) {
+            val initialCamera = CameraOptions.Builder()
+                .center(Point.fromLngLat(-47.332, -22.738))
+                .zoom(13.5)
+                .build()
+            binding.mapView.mapboxMap.setCamera(initialCamera)
+            pointAnnotationManager = binding.mapView.annotations.createPointAnnotationManager()
+
+            // Desliga o modo seguir se o usuário arrastar o mapa manualmente
+            binding.mapView.gestures.addOnMoveListener(object : OnMoveListener {
+                override fun onMoveBegin(detector: MoveGestureDetector) {
+                    modoSeguirAtivo = false
+                }
+                override fun onMove(detector: MoveGestureDetector): Boolean = false
+                override fun onMoveEnd(detector: MoveGestureDetector) {}
+            })
+
+            // Ajusta margem inferior do logo e atribuição do Mapbox para não ficarem sob os botões flutuantes
+            binding.mapView.attribution.updateSettings {
+                marginBottom = 180f
+            }
+            binding.mapView.logo.updateSettings {
+                marginBottom = 180f
+            }
+
+            // Solicita permissões de localização em tempo de execução ao abrir o mapa
+            verificarESolicitarPermissoesLocalizacao()
+
+            // Atualiza os marcadores caso a geocodificação tenha terminado antes do estilo carregar
+            atualizarMapaComParadas()
+        }
+    }
+
+    private fun verificarESolicitarPermissoesLocalizacao() {
+        val fineGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+        if (fineGranted || coarseGranted) {
+            ativarLocalizacaoSePermitido()
+        } else {
+            requestLocationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
+    private fun ativarLocalizacaoSePermitido() {
+        val fineGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+        if (fineGranted || coarseGranted) {
+            binding.mapView.location.updateSettings {
+                enabled = true
+                locationPuck = createDefault2DPuck(withBearing = true)
+            }
+        }
+    }
+
+    private fun centralizarEmMim() {
+        val fineGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+        if (!fineGranted && !coarseGranted) {
+            verificarESolicitarPermissoesLocalizacao()
+            return
+        }
+
+        ativarLocalizacaoSePermitido()
+        modoSeguirAtivo = true
+
+        val followPuckState = binding.mapView.viewport.makeFollowPuckViewportState(
+            FollowPuckViewportStateOptions.Builder()
+                .zoom(16.0)
+                .build()
+        )
+
+        binding.mapView.viewport.transitionTo(followPuckState)
+    }
+
+    private fun criarBitmapBolinha(concluida: Boolean): Bitmap {
+        val size = 56
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val paintCircle = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (concluida) Color.GRAY else Color.parseColor("#E53935")
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f - 4f, paintCircle)
+
+        val paintStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+        }
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f - 4f, paintStroke)
+
+        return bitmap
+    }
+
+    private fun calcularPapelParada(indexValido: Int, totalValidas: Int): String {
+        if (totalValidas <= 1) return "Parada"
+        return when (indexValido) {
+            0 -> "Coleta"
+            totalValidas - 1 -> "Destino"
+            else -> "Parada ${indexValido + 1}"
+        }
+    }
+
+    private fun atualizarMapaComParadas() {
+        val versaoAtual = ++versaoAtualizacaoMapa
+        val snapshot = listaParadas.toList()
+
+        Thread {
+            try {
+                val geocoder = Geocoder(this, Locale.getDefault())
+                val paradasValidas = snapshot.filter { it.endereco.isNotBlank() }
+                val totalValidas = paradasValidas.size
+
+                val pontosComInfo = mutableListOf<Triple<Point, Parada, String>>()
+
+                for ((idx, parada) in paradasValidas.withIndex()) {
+                    val enderecoLimpo = limparParaGoogleMaps(parada.endereco)
+                    val papel = calcularPapelParada(idx, totalValidas)
+
+                    val pontoCached = cacheGeocoding[enderecoLimpo]
+                    if (pontoCached != null) {
+                        pontosComInfo.add(Triple(pontoCached, parada, papel))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        val enderecos = geocoder.getFromLocationName(enderecoLimpo, 1)
+                        if (!enderecos.isNullOrEmpty()) {
+                            val loc = enderecos[0]
+                            val ponto = Point.fromLngLat(loc.longitude, loc.latitude)
+                            cacheGeocoding[enderecoLimpo] = ponto
+                            pontosComInfo.add(Triple(ponto, parada, papel))
+                        }
+                    }
+                }
+
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (versaoAtual != versaoAtualizacaoMapa) return@runOnUiThread
+
+                    val manager = pointAnnotationManager ?: return@runOnUiThread
+                    manager.deleteAll()
+
+                    val bitmapNormal = criarBitmapBolinha(false)
+                    val bitmapConcluida = criarBitmapBolinha(true)
+
+                    val pontosLocais = mutableListOf<Point>()
+
+                    for (item in pontosComInfo) {
+                        val ponto = item.first
+                        val parada = item.second
+                        val papel = item.third
+                        pontosLocais.add(ponto)
+
+                        val options = PointAnnotationOptions()
+                            .withPoint(ponto)
+                            .withIconImage(if (parada.concluida) bitmapConcluida else bitmapNormal)
+                            .withIconOpacity(if (parada.concluida) 0.4 else 1.0)
+                            .withTextField(papel)
+                            .withTextAnchor(TextAnchor.BOTTOM)
+                            .withTextOffset(listOf(0.0, -1.5))
+                            .withTextSize(12.0)
+                            .withTextColor("#000000")
+                            .withTextHaloColor("#FFFFFF")
+                            .withTextHaloWidth(2.0)
+                            .withTextOpacity(if (parada.concluida) 0.4 else 1.0)
+
+                        manager.create(options)
+                    }
+
+                    // Câmera inteligente (só move se modoSeguirAtivo for FALSE e a lista de pontos mudar)
+                    if (!modoSeguirAtivo && ultimosPontosCamera != pontosLocais) {
+                        ultimosPontosCamera = pontosLocais
+                        if (pontosLocais.isNotEmpty()) {
+                            if (pontosLocais.size == 1) {
+                                val cameraOptions = CameraOptions.Builder()
+                                    .center(pontosLocais[0])
+                                    .zoom(15.0)
+                                    .build()
+                                binding.mapView.mapboxMap.setCamera(cameraOptions)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                val cameraOptions = binding.mapView.mapboxMap.cameraForCoordinates(
+                                    pontosLocais,
+                                    EdgeInsets(80.0, 80.0, 80.0, 80.0),
+                                    null,
+                                    null
+                                )
+                                binding.mapView.mapboxMap.setCamera(cameraOptions)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MAPA", "Erro ao atualizar marcadores no Mapbox", e)
+            }
+        }.start()
     }
 
     private fun verificarEAlertarAcessibilidade() {
@@ -344,7 +607,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun novaRota() {
-        binding.txtOrigem.setText("Minha localização atual")
+        binding.txtOrigem.setText("")
         listaParadas.clear()
         paradaAdapter.notifyDataSetChanged()
 
@@ -352,6 +615,7 @@ class MainActivity : AppCompatActivity() {
         prefs.edit().clear().apply()
 
         atualizarBotaoRota()
+        atualizarMapaComParadas()
         Toast.makeText(this, "Todas as rotas foram resetadas!", Toast.LENGTH_SHORT).show()
     }
 
@@ -373,12 +637,16 @@ class MainActivity : AppCompatActivity() {
             putString("paradas_json", ParadaStorage.toJson(listaParadas))
             apply()
         }
+        atualizarMapaComParadas()
     }
 
     private fun carregarUltimosEnderecos() {
         val prefs = getSharedPreferences("enderecos_cache", MODE_PRIVATE)
-        val origemSalva = prefs.getString("origem", "Minha localização atual")
-        binding.txtOrigem.setText(if (origemSalva.isNullOrBlank()) "Minha localização atual" else origemSalva)
+        var origemSalva = prefs.getString("origem", "") ?: ""
+        if (origemSalva.equals("Minha localização atual", ignoreCase = true)) {
+            origemSalva = ""
+        }
+        binding.txtOrigem.setText(origemSalva)
 
         val paradasJson = prefs.getString("paradas_json", "") ?: ""
         val paradasSalvas = ParadaStorage.fromJson(paradasJson)
@@ -387,6 +655,7 @@ class MainActivity : AppCompatActivity() {
         listaParadas.addAll(paradasSalvas)
         paradaAdapter.notifyDataSetChanged()
         atualizarBotaoRota()
+        atualizarMapaComParadas()
     }
 
     private fun atualizarBotaoRota() {

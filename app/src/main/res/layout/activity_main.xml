@@ -1,123 +1,189 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp"
+    android:background="#FFFFFF"
     tools:context=".MainActivity">
 
-    <!-- Card de Alerta de Permissão de Acessibilidade -->
-    <LinearLayout
-        android:id="@+id/bannerAcessibilidade"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:background="#FFF3CD"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:padding="10dp"
-        android:visibility="gone"
-        tools:visibility="visible">
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="⚠️ Acessibilidade desativada. O app não capturará entregas em segundo plano."
-            android:textColor="#856404"
-            android:textSize="12sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/btnAtivarAcessibilidade"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="ATIVAR"
-            android:textColor="#856404"
-            android:textSize="10sp" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/labelOrigem"
+    <!-- Guideline horizontal em 30% (Mapa ocupa 70%) -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline40"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Origem (Ponto Inicial da Jornada):"
-        android:textSize="12sp"
-        android:textStyle="bold" />
+        android:orientation="horizontal"
+        app:layout_constraintGuide_percent="0.3" />
 
-    <EditText
-        android:id="@+id/txtOrigem"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Minha localização atual"
-        android:inputType="text"
-        android:textSize="14sp" />
-
+    <!-- Container Superior (0% - 30%): Banner, Origem, Linha Unificada Paradas, RecyclerView rolável -->
     <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Filtro para Print:"
-            android:textSize="12sp"
-            android:textStyle="bold" />
-
-        <Spinner
-            android:id="@+id/spinnerApp"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_weight="1" />
-    </LinearLayout>
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginVertical="8dp"
-        android:background="#CCCCCC" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Paradas da Rota (Coletas e Entregas):"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/btnAdicionarParada"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="+ Parada"
-            android:textSize="11sp" />
-    </LinearLayout>
-
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/recyclerParadas"
-        android:layout_width="match_parent"
+        android:id="@+id/containerTop"
+        android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:paddingVertical="4dp" />
+        android:orientation="vertical"
+        android:paddingHorizontal="12dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="4dp"
+        app:layout_constraintBottom_toTopOf="@id/guideline40"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
 
-    <LinearLayout
-        android:layout_width="match_parent"
+        <!-- Banner Acessibilidade -->
+        <LinearLayout
+            android:id="@+id/bannerAcessibilidade"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:background="#FFF3CD"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="6dp"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="⚠️ Acessibilidade desativada. O app não capturará entregas em segundo plano."
+                android:textColor="#856404"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnAtivarAcessibilidade"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ATIVAR"
+                android:textColor="#856404"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <!-- Campo de Origem com Botão de Limpar (ETAPA B) -->
+        <TextView
+            android:id="@+id/labelOrigem"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Origem (Ponto Inicial da Jornada):"
+            android:textColor="#212121"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/txtOrigem"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Origem (vazio = minha localização)"
+                android:inputType="text"
+                android:textColor="#212121"
+                android:textColorHint="#757575"
+                android:textSize="13sp" />
+
+            <ImageButton
+                android:id="@+id/btnLimparOrigem"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Limpar origem"
+                android:src="@android:drawable/ic_menu_close_clear_cancel" />
+        </LinearLayout>
+
+        <!-- Linha Unificada das Paradas + Spinner + Botão + Parada (ETAPA C) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.2"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:text="Paradas da rota (coletas e entregas):"
+                android:textColor="#212121"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <Spinner
+                android:id="@+id/spinnerApp"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1" />
+
+            <Button
+                android:id="@+id/btnAdicionarParada"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:paddingHorizontal="8dp"
+                android:text="+ Parada"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <!-- RecyclerView rolável na parte superior -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerParadas"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingVertical="2dp" />
+
+    </LinearLayout>
+
+    <!-- Container Inferior (30% - 100%): MapView FIXO do Mapbox -->
+    <com.mapbox.maps.MapView
+        android:id="@+id/mapView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/guideline40"
+        app:mapbox_cameraTargetLat="-22.738"
+        app:mapbox_cameraTargetLng="-47.332"
+        app:mapbox_cameraZoom="13.5" />
+
+    <!-- Botão Flutuante Centralizar em Mim sobre o mapa -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/btnCentralizarMim"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:layout_margin="12dp"
+        android:contentDescription="Centralizar em mim"
+        app:backgroundTint="#FFFFFF"
+        app:fabCustomSize="48dp"
+        app:layout_constraintBottom_toTopOf="@id/cardBotoesAcao"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:srcCompat="@android:drawable/ic_menu_mylocation"
+        app:tint="#1976D2" />
+
+    <!-- Container Transparente dos Botões de Ação Flutuando SOBRE o mapa -->
+    <LinearLayout
+        android:id="@+id/cardBotoesAcao"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"
+        android:background="@android:color/transparent"
+        android:orientation="vertical"
+        android:padding="4dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -126,42 +192,53 @@
 
             <Button
                 android:id="@+id/btnRefresh"
-                style="?attr/materialButtonOutlinedStyle"
+                style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="2dp"
                 android:layout_weight="1"
-                android:text="🔄 REFRESH (1s)"
-                android:textSize="11sp" />
+                android:text="REFRESH"
+                android:textColor="#D32F2F"
+                android:textSize="11sp"
+                android:textStyle="bold" />
 
             <Button
                 android:id="@+id/btnCarregarPrint"
+                style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="2dp"
                 android:layout_marginEnd="2dp"
                 android:layout_weight="1"
                 android:text="PRINT"
-                android:textSize="11sp" />
+                android:textColor="#D32F2F"
+                android:textSize="11sp"
+                android:textStyle="bold" />
 
             <Button
                 android:id="@+id/btnRota"
+                style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="2dp"
                 android:layout_weight="1"
                 android:text="GERAR ROTA"
-                android:textSize="11sp" />
+                android:textColor="#D32F2F"
+                android:textSize="11sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <Button
             android:id="@+id/btnNovaRota"
-            style="?attr/materialButtonOutlinedStyle"
+            style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:text="NOVA ROTA (ZERAR TUDO)"
-            android:textColor="#D32F2F" />
+            android:textColor="#D32F2F"
+            android:textSize="11sp"
+            android:textStyle="bold" />
 
     </LinearLayout>
-</LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
